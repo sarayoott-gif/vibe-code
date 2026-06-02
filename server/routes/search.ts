@@ -16,6 +16,15 @@ router.get('/', authMiddleware, async (req: AuthRequest, res) => {
     const query = q.trim().toLowerCase();
 
     const tasks = await prisma.task.findMany({
+      where: {
+        project: {
+          members: {
+            some: {
+              userId: req.user?.id,
+            },
+          },
+        },
+      },
       include: {
         project: {
           select: {

@@ -8,7 +8,17 @@ const router = Router();
 // GET /api/tasks
 router.get('/', authMiddleware, async (req: AuthRequest, res) => {
   try {
+    const userId = req.user?.id;
     const tasks = await prisma.task.findMany({
+      where: {
+        project: {
+          members: {
+            some: {
+              userId,
+            },
+          },
+        },
+      },
       include: {
         assignee: {
           select: {
@@ -57,7 +67,22 @@ router.get('/', authMiddleware, async (req: AuthRequest, res) => {
 router.get('/project/:projectId', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const { projectId } = req.params;
+    const userId = req.user?.id;
     const { status, assignee, priority, q } = req.query;
+
+    // Check project membership
+    const membership = await prisma.projectMember.findUnique({
+      where: {
+        userId_projectId: {
+          userId: userId!,
+          projectId,
+        },
+      },
+    });
+    if (!membership) {
+      res.status(403).json({ error: 'Forbidden: You are not a member of this project' });
+      return;
+    }
 
     const where: any = { projectId };
 
@@ -130,10 +155,18 @@ router.get('/project/:projectId', authMiddleware, async (req: AuthRequest, res) 
 router.get('/:id', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.id;
 
     const t = await prisma.task.findUnique({
       where: { id },
       include: {
+        project: {
+          include: {
+            members: {
+              where: { userId },
+            },
+          },
+        },
         assignee: {
           select: {
             id: true,
@@ -168,6 +201,11 @@ router.get('/:id', authMiddleware, async (req: AuthRequest, res) => {
 
     if (!t) {
       res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+
+    if (t.project.members.length === 0) {
+      res.status(403).json({ error: 'Forbidden: You are not a member of this project' });
       return;
     }
 
@@ -227,6 +265,20 @@ router.post('/', authMiddleware, async (req: AuthRequest, res) => {
     }
 
     const { projectId, title, description, status, priority, assigneeId, dueDate, labels } = validation.data;
+
+    // Check project membership
+    const membership = await prisma.projectMember.findUnique({
+      where: {
+        userId_projectId: {
+          userId: creatorId,
+          projectId,
+        },
+      },
+    });
+    if (!membership) {
+      res.status(403).json({ error: 'Forbidden: You are not a member of this project' });
+      return;
+    }
 
     // Create task
     const task = await prisma.task.create({
@@ -310,9 +362,24 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res) => {
       return;
     }
 
-    const currentTask = await prisma.task.findUnique({ where: { id } });
+    const currentTask = await prisma.task.findUnique({
+      where: { id },
+      include: {
+        project: {
+          include: {
+            members: {
+              where: { userId: editorId },
+            },
+          },
+        },
+      },
+    });
     if (!currentTask) {
       res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    if (currentTask.project.members.length === 0) {
+      res.status(403).json({ error: 'Forbidden: You are not a member of this project' });
       return;
     }
 
@@ -386,6 +453,7 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res) => {
 router.patch('/:id/status', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.id;
     const schema = z.object({
       status: z.enum(['todo', 'in_progress', 'in_review', 'done']),
     });
@@ -393,6 +461,27 @@ router.patch('/:id/status', authMiddleware, async (req: AuthRequest, res) => {
     const validation = schema.safeParse(req.body);
     if (!validation.success) {
       res.status(400).json({ error: validation.error.issues[0].message });
+      return;
+    }
+
+    const currentTask = await prisma.task.findUnique({
+      where: { id },
+      include: {
+        project: {
+          include: {
+            members: {
+              where: { userId },
+            },
+          },
+        },
+      },
+    });
+    if (!currentTask) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    if (currentTask.project.members.length === 0) {
+      res.status(403).json({ error: 'Forbidden: You are not a member of this project' });
       return;
     }
 
@@ -444,6 +533,29 @@ router.patch('/:id/status', authMiddleware, async (req: AuthRequest, res) => {
 router.delete('/:id', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.id;
+
+    // Check membership
+    const currentTask = await prisma.task.findUnique({
+      where: { id },
+      include: {
+        project: {
+          include: {
+            members: {
+              where: { userId },
+            },
+          },
+        },
+      },
+    });
+    if (!currentTask) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    if (currentTask.project.members.length === 0) {
+      res.status(403).json({ error: 'Forbidden: You are not a member of this project' });
+      return;
+    }
 
     await prisma.task.delete({
       where: { id },

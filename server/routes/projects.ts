@@ -11,6 +11,13 @@ router.get('/', authMiddleware, async (req: AuthRequest, res) => {
     const userId = req.user?.id;
 
     const projects = await prisma.project.findMany({
+      where: {
+        members: {
+          some: {
+            userId,
+          },
+        },
+      },
       include: {
         members: {
           include: {
@@ -103,6 +110,12 @@ router.get('/:id', authMiddleware, async (req: AuthRequest, res) => {
 
     if (!p) {
       res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    const isMember = p.members.some((m) => m.userId === userId);
+    if (!isMember) {
+      res.status(403).json({ error: 'Forbidden: You are not a member of this project' });
       return;
     }
 
@@ -217,10 +230,21 @@ router.put('/:id/star', authMiddleware, async (req: AuthRequest, res) => {
       return;
     }
 
-    // Check project exists
-    const project = await prisma.project.findUnique({ where: { id } });
+    // Check project exists and get membership
+    const project = await prisma.project.findUnique({
+      where: { id },
+      include: {
+        members: {
+          where: { userId },
+        },
+      },
+    });
     if (!project) {
       res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+    if (project.members.length === 0) {
+      res.status(403).json({ error: 'Forbidden: You are not a member of this project' });
       return;
     }
 
@@ -262,6 +286,21 @@ router.put('/:id/star', authMiddleware, async (req: AuthRequest, res) => {
 router.delete('/:id', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.id;
+
+    // Check membership
+    const membership = await prisma.projectMember.findUnique({
+      where: {
+        userId_projectId: {
+          userId: userId!,
+          projectId: id,
+        },
+      },
+    });
+    if (!membership) {
+      res.status(403).json({ error: 'Forbidden: You are not a member of this project' });
+      return;
+    }
 
     // Delete project (cascades memberships, starred, tasks, comments due to schema onDelete: Cascade)
     await prisma.project.delete({

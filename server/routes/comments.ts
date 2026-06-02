@@ -8,7 +8,19 @@ const router = Router();
 // GET /api/comments
 router.get('/', authMiddleware, async (req: AuthRequest, res) => {
   try {
+    const userId = req.user?.id;
     const comments = await prisma.comment.findMany({
+      where: {
+        task: {
+          project: {
+            members: {
+              some: {
+                userId,
+              },
+            },
+          },
+        },
+      },
       include: {
         author: {
           select: {
@@ -44,6 +56,31 @@ router.get('/', authMiddleware, async (req: AuthRequest, res) => {
 router.get('/:taskId', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const { taskId } = req.params;
+    const userId = req.user?.id;
+
+    // Check project membership
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        project: {
+          include: {
+            members: {
+              where: { userId },
+            },
+          },
+        },
+      },
+    });
+
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+
+    if (task.project.members.length === 0) {
+      res.status(403).json({ error: 'Forbidden: You are not a member of this project' });
+      return;
+    }
 
     const comments = await prisma.comment.findMany({
       where: { taskId },
@@ -100,16 +137,27 @@ router.post('/:taskId', authMiddleware, async (req: AuthRequest, res) => {
 
     const { body } = validation.data;
 
-    // Verify task exists
+    // Verify task exists and check project membership
     const task = await prisma.task.findUnique({
       where: { id: taskId },
       include: {
-        project: true
-      }
+        project: {
+          include: {
+            members: {
+              where: { userId: authorId },
+            },
+          },
+        },
+      },
     });
 
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+
+    if (task.project.members.length === 0) {
+      res.status(403).json({ error: 'Forbidden: You are not a member of this project' });
       return;
     }
 

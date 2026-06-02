@@ -14,7 +14,16 @@ router.get('/', authMiddleware, async (req: AuthRequest, res) => {
     }
 
     const myTasks = await prisma.task.findMany({
-      where: { assigneeId: userId },
+      where: {
+        assigneeId: userId,
+        project: {
+          members: {
+            some: {
+              userId,
+            },
+          },
+        },
+      },
     });
 
     const todoCount = myTasks.filter((t) => t.status === 'todo').length;
