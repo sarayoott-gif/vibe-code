@@ -6,9 +6,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { User, Mail, ShieldCheck, KeyRound, Check, AlertCircle } from 'lucide-react';
+import { api } from '../lib/api';
 
 export const SettingsView: React.FC = () => {
-  const { currentUser, updateUserProfile } = useApp();
+  const { currentUser, updateProfile } = useApp();
 
   const [name, setName] = useState(currentUser?.name || '');
   const [email, setEmail] = useState(currentUser?.email || '');
@@ -23,7 +24,7 @@ export const SettingsView: React.FC = () => {
 
   if (!currentUser) return null;
 
-  const handleUpdateProfile = (e: React.FormEvent) => {
+  const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileSuccess('');
     setProfileError('');
@@ -37,20 +38,15 @@ export const SettingsView: React.FC = () => {
       return;
     }
 
-    // Update with initials generated automatically
-    const names = name.trim().split(' ');
-    const initials = names.map((n) => n[0]).join('').toUpperCase().substring(0, 2) || '?';
-
-    updateUserProfile({
-      name: name.trim(),
-      email: email.trim(),
-      initials
-    });
-
-    setProfileSuccess('Profile details successfully updated.');
+    try {
+      await updateProfile(name.trim(), email.trim());
+      setProfileSuccess('Profile details successfully updated.');
+    } catch (err: any) {
+      setProfileError(err.message || 'Failed to update profile.');
+    }
   };
 
-  const handleUpdateSecurity = (e: React.FormEvent) => {
+  const handleUpdateSecurity = async (e: React.FormEvent) => {
     e.preventDefault();
     setSecuritySuccess('');
     setSecurityError('');
@@ -70,11 +66,15 @@ export const SettingsView: React.FC = () => {
       return;
     }
 
-    // Success simulation
-    setSecuritySuccess('Your password has been changed successfully.');
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
+    try {
+      await api.auth.updatePassword(currentPassword, newPassword);
+      setSecuritySuccess('Your password has been changed successfully.');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      setSecurityError(err.message || 'Failed to update password.');
+    }
   };
 
   return (

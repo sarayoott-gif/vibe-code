@@ -19,7 +19,7 @@ export const AuthView: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -35,8 +35,7 @@ export const AuthView: React.FC = () => {
 
     setLoading(true);
 
-    // Short simulated delay for realistic feel
-    setTimeout(() => {
+    try {
       if (isSignUp) {
         if (!name.trim()) {
           setError('Name is required.');
@@ -48,13 +47,16 @@ export const AuthView: React.FC = () => {
           setLoading(false);
           return;
         }
-        const success = signup(name, email);
+        const success = await signup(name, email, password);
         if (!success) setLoading(false);
       } else {
-        const success = login(email);
+        const success = await login(email, password);
         if (!success) setLoading(false);
       }
-    }, 800);
+    } catch (err: any) {
+      setError(err.message || 'Authentication failed');
+      setLoading(false);
+    }
   };
 
   return (

@@ -13,15 +13,8 @@ import {
   ToastMessage,
   AppNotification,
   TaskStatus,
-  Priority
 } from '../types';
-import {
-  INITIAL_USERS,
-  INITIAL_PROJECTS,
-  INITIAL_TASKS,
-  INITIAL_COMMENTS,
-  INITIAL_NOTIFICATIONS
-} from '../data';
+import { api } from '../lib/api';
 
 interface AppContextProps {
   currentUser: User | null;
@@ -44,11 +37,12 @@ interface AppContextProps {
   isSidebarCollapsed: boolean;
   createProjectModalOpen: boolean;
   darkMode: boolean;
+  loading: boolean;
 
   // Actions
   toggleDarkMode: () => void;
-  login: (email: string) => boolean;
-  signup: (name: string, email: string) => boolean;
+  login: (email: string, password?: string) => Promise<boolean>;
+  signup: (name: string, email: string, password?: string) => Promise<boolean>;
   logout: () => void;
   navigate: (screen: ActiveScreen) => void;
   setSearchQuery: (query: string) => void;
@@ -65,62 +59,33 @@ interface AppContextProps {
   setCreateProjectModalOpen: (v: boolean) => void;
 
   // Data Actions
-  createTask: (taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'commentCount'>) => void;
-  updateTask: (taskId: string, updates: Partial<Task>) => void;
-  deleteTask: (taskId: string) => void;
-  moveTaskStatus: (taskId: string, status: TaskStatus) => void;
-  createProject: (name: string, description: string, color: string) => void;
-  toggleStarProject: (projectId: string) => void;
-  addComment: (taskId: string, body: string) => void;
-  markNotificationsAsRead: () => void;
+  createTask: (taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'commentCount'>) => Promise<void>;
+  updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
+  moveTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
+  createProject: (name: string, description: string, color: string) => Promise<void>;
+  toggleStarProject: (projectId: string) => Promise<void>;
+  addComment: (taskId: string, body: string) => Promise<void>;
+  markNotificationsAsRead: () => Promise<void>;
   addToast: (type: 'success' | 'error' | 'info', message: string) => void;
   removeToast: (id: string) => void;
-  updateProfile: (name: string, email: string) => void;
+  updateProfile: (name: string, email: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextProps | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Try loading from localStorage, fallback to mock data
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const cached = localStorage.getItem('taskflow_user');
-    if (cached) return JSON.parse(cached);
-    // Default logged in user u1 "Anira Wong" as specified by PRD
-    return INITIAL_USERS[0];
-  });
-
-  const [users, setUsers] = useState<User[]>(() => {
-    const cached = localStorage.getItem('taskflow_users');
-    return cached ? JSON.parse(cached) : INITIAL_USERS;
-  });
-
-  const [projects, setProjects] = useState<Project[]>(() => {
-    const cached = localStorage.getItem('taskflow_projects');
-    return cached ? JSON.parse(cached) : INITIAL_PROJECTS;
-  });
-
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    const cached = localStorage.getItem('taskflow_tasks');
-    return cached ? JSON.parse(cached) : INITIAL_TASKS;
-  });
-
-  const [comments, setComments] = useState<Comment[]>(() => {
-    const cached = localStorage.getItem('taskflow_comments');
-    return cached ? JSON.parse(cached) : INITIAL_COMMENTS;
-  });
-
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
-    const cached = localStorage.getItem('taskflow_notifications');
-    return cached ? JSON.parse(cached) : INITIAL_NOTIFICATIONS;
-  });
-
-  const [starredProjects, setStarredProjects] = useState<string[]>(() => {
-    const cached = localStorage.getItem('taskflow_starred');
-    return cached ? JSON.parse(cached) : ['p1'];
-  });
-
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('taskflow_token'));
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [starredProjects, setStarredProjects] = useState<string[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [activeScreen, setActiveScreen] = useState<ActiveScreen>({ type: 'dashboard' });
+  const [activeScreen, setActiveScreen] = useState<ActiveScreen>({ type: 'login' });
+  const [loading, setLoading] = useState<boolean>(true);
 
   // Filter States
   const [searchQuery, setSearchQueryState] = useState('');
@@ -140,35 +105,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return cached ? JSON.parse(cached) === true : false;
   });
 
-  // Sync to localStorage
-  useEffect(() => {
-    localStorage.setItem('taskflow_user', JSON.stringify(currentUser));
-  }, [currentUser]);
+  // Load and refresh initial data
+  const fetchInitialData = async () => {
+    try {
+      const [fetchedUsers, fetchedProjects, fetchedTasks, fetchedComments, fetchedNotifications] = await Promise.all([
+        api.users.list(),
+        api.projects.list(),
+        api.tasks.list(),
+        api.comments.listAll(),
+        api.notifications.list()
+      ]);
+      setUsers(fetchedUsers);
+      setProjects(fetchedProjects);
+      setTasks(fetchedTasks);
+      setComments(fetchedComments);
+      setNotifications(fetchedNotifications);
 
-  useEffect(() => {
-    localStorage.setItem('taskflow_users', JSON.stringify(users));
-  }, [users]);
+      const starredIds = fetchedProjects.filter(p => p.starred).map(p => p.id);
+      setStarredProjects(starredIds);
+    } catch (err: any) {
+      console.error('Error fetching initial data:', err);
+      addToast('error', 'Failed to load workspace data.');
+    }
+  };
 
+  // Auth bootstrap
   useEffect(() => {
-    localStorage.setItem('taskflow_projects', JSON.stringify(projects));
-  }, [projects]);
+    const initAuth = async () => {
+      if (token) {
+        try {
+          localStorage.setItem('taskflow_token', token);
+          const user = await api.auth.me();
+          setCurrentUser(user);
+          setActiveScreen({ type: 'dashboard' });
+          await fetchInitialData();
+        } catch (err) {
+          console.error('Token verification failed:', err);
+          localStorage.removeItem('taskflow_token');
+          setToken(null);
+          setCurrentUser(null);
+          setActiveScreen({ type: 'login' });
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        setCurrentUser(null);
+        setActiveScreen({ type: 'login' });
+        setLoading(false);
+      }
+    };
+    initAuth();
+  }, [token]);
 
-  useEffect(() => {
-    localStorage.setItem('taskflow_tasks', JSON.stringify(tasks));
-  }, [tasks]);
-
-  useEffect(() => {
-    localStorage.setItem('taskflow_comments', JSON.stringify(comments));
-  }, [comments]);
-
-  useEffect(() => {
-    localStorage.setItem('taskflow_notifications', JSON.stringify(notifications));
-  }, [notifications]);
-
-  useEffect(() => {
-    localStorage.setItem('taskflow_starred', JSON.stringify(starredProjects));
-  }, [starredProjects]);
-
+  // Dark mode effect
   useEffect(() => {
     localStorage.setItem('taskflow_dark_mode', JSON.stringify(darkMode));
     if (darkMode) {
@@ -183,71 +172,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Auth Operations
-  const login = (email: string): boolean => {
-    const found = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (found) {
-      setCurrentUser(found);
-      addToast('success', `Welcome back, ${found.name}!`);
-      setActiveScreen({ type: 'dashboard' });
+  const login = async (email: string, password = 'password123'): Promise<boolean> => {
+    try {
+      const data = await api.auth.login(email, password);
+      localStorage.setItem('taskflow_token', data.token);
+      setToken(data.token);
+      setCurrentUser(data.user);
+      addToast('success', `Welcome back, ${data.user.name}!`);
       return true;
-    } else {
-      // Allow simulation
-      const initials = email.substring(0, 2).toUpperCase();
-      const name = email.split('@')[0];
-      const fallbackName = name.charAt(0).toUpperCase() + name.slice(1);
-      const newUser: User = {
-        id: 'u_' + Date.now(),
-        name: fallbackName,
-        email: email,
-        avatarUrl: null,
-        initials: initials || 'US'
-      };
-      setUsers((prev) => [...prev, newUser]);
-      setCurrentUser(newUser);
-      addToast('success', `Welcome, ${fallbackName}! A new profile has been simulated.`);
-      setActiveScreen({ type: 'dashboard' });
-      return true;
+    } catch (err: any) {
+      addToast('error', err.message || 'Invalid email or password.');
+      return false;
     }
   };
 
-  const signup = (name: string, email: string): boolean => {
-    const exists = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (exists) {
-      addToast('error', 'User with this email already exists.');
+  const signup = async (name: string, email: string, password = 'password123'): Promise<boolean> => {
+    try {
+      const data = await api.auth.register(name, email, password);
+      localStorage.setItem('taskflow_token', data.token);
+      setToken(data.token);
+      setCurrentUser(data.user);
+      addToast('success', `Account created successfully. Welcome, ${name}!`);
+      return true;
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to sign up.');
       return false;
     }
-
-    const initials = name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .substring(0, 2)
-      .toUpperCase();
-
-    const newUser: User = {
-      id: 'u_' + Date.now(),
-      name,
-      email,
-      avatarUrl: null,
-      initials: initials || 'XX'
-    };
-
-    setUsers((prev) => [...prev, newUser]);
-    setCurrentUser(newUser);
-    addToast('success', `Account created successfully. Welcome, ${name}!`);
-    setActiveScreen({ type: 'dashboard' });
-    return true;
   };
 
   const logout = () => {
+    localStorage.removeItem('taskflow_token');
+    setToken(null);
     setCurrentUser(null);
+    setUsers([]);
+    setProjects([]);
+    setTasks([]);
+    setComments([]);
+    setNotifications([]);
+    setStarredProjects([]);
     addToast('info', 'Logged out safely.');
     setActiveScreen({ type: 'login' });
   };
 
   const navigate = (screen: ActiveScreen) => {
     setActiveScreen(screen);
-    // Reset local filters when moving to a different screen type
     if (screen.type === 'project_board') {
       setStatusFilter('all');
       setAssigneeFilter('all');
@@ -284,172 +252,148 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Profile operations
-  const updateProfile = (name: string, email: string) => {
-    if (!currentUser) return;
-    const updatedUser = { ...currentUser, name, email };
-    setCurrentUser(updatedUser);
-    setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updatedUser : u)));
-    addToast('success', 'Profile settings updated.');
-  };
-
-  // Tasks CRUD
-  const createTask = (taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'commentCount'>) => {
-    const newTask: Task = {
-      ...taskData,
-      id: 't_' + Date.now(),
-      commentCount: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    setTasks((prev) => [newTask, ...prev]);
-    addToast('success', `Task "${newTask.title}" added successfully.`);
-
-    // Trigger Notification for Assignee
-    if (newTask.assigneeId && newTask.assigneeId !== currentUser?.id) {
-      const p = projects.find((proj) => proj.id === newTask.projectId);
-      const assigneeUser = users.find((usr) => usr.id === newTask.assigneeId);
-      const assignerName = currentUser?.name || 'Someone';
-
-      const newNotif: AppNotification = {
-        id: 'n_' + Date.now(),
-        title: 'New Task Assigned',
-        description: `"${newTask.title}" has been assigned to ${assigneeUser?.name || 'you'} by ${assignerName} in ${p?.name || 'Project'}.`,
-        time: 'Just now',
-        read: false,
-        taskId: newTask.id,
-        projectId: newTask.projectId
-      };
-      setNotifications((prev) => [newNotif, ...prev]);
+  const updateProfile = async (name: string, email: string) => {
+    try {
+      const updated = await api.auth.updateProfile(name, email);
+      setCurrentUser(updated);
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      addToast('success', 'Profile settings updated.');
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to update profile.');
     }
   };
 
-  const updateTask = (taskId: string, updates: Partial<Task>) => {
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id === taskId) {
-          const updated = {
-            ...t,
-            ...updates,
-            updatedAt: new Date().toISOString()
-          };
-          addToast('success', 'Task details updated.');
-          return updated;
-        }
-        return t;
-      })
-    );
+  // Tasks CRUD
+  const createTask = async (taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'commentCount'>) => {
+    try {
+      const created = await api.tasks.create(taskData);
+      setTasks((prev) => [created, ...prev]);
+      addToast('success', `Task "${created.title}" added successfully.`);
+      // Refresh notifications in case there are assignments
+      const fetchedNotifications = await api.notifications.list();
+      setNotifications(fetchedNotifications);
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to create task.');
+    }
   };
 
-  const deleteTask = (taskId: string) => {
-    const task = tasks.find((t) => t.id === taskId);
-    setTasks((prev) => prev.filter((t) => t.id !== taskId));
-    setComments((prev) => prev.filter((c) => c.taskId !== taskId));
-    addToast('info', `Task "${task?.title || 'Selected task'}" deleted.`);
-    if (viewingTaskId === taskId) setViewingTaskId(null);
-    if (editingTaskId === taskId) setEditingTaskId(null);
+  const updateTask = async (taskId: string, updates: Partial<Task>) => {
+    try {
+      const existing = tasks.find((t) => t.id === taskId);
+      if (!existing) return;
+
+      const merged = { ...existing, ...updates };
+      const updated = await api.tasks.update(taskId, {
+        title: merged.title,
+        description: merged.description,
+        status: merged.status,
+        priority: merged.priority,
+        assigneeId: merged.assigneeId,
+        dueDate: merged.dueDate,
+        labels: merged.labels,
+      });
+
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+      addToast('success', 'Task details updated.');
+
+      const fetchedNotifications = await api.notifications.list();
+      setNotifications(fetchedNotifications);
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to update task.');
+    }
   };
 
-  const moveTaskStatus = (taskId: string, status: TaskStatus) => {
-    const task = tasks.find((t) => t.id === taskId);
-    if (!task) return;
+  const deleteTask = async (taskId: string) => {
+    try {
+      const task = tasks.find((t) => t.id === taskId);
+      await api.tasks.delete(taskId);
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      setComments((prev) => prev.filter((c) => c.taskId !== taskId));
+      addToast('info', `Task "${task?.title || 'Selected task'}" deleted.`);
+      if (viewingTaskId === taskId) setViewingTaskId(null);
+      if (editingTaskId === taskId) setEditingTaskId(null);
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to delete task.');
+    }
+  };
 
-    if (task.status === status) return;
+  const moveTaskStatus = async (taskId: string, status: TaskStatus) => {
+    try {
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task || task.status === status) return;
 
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id === taskId) {
-          return {
-            ...t,
-            status,
-            updatedAt: new Date().toISOString()
-          };
-        }
-        return t;
-      })
-    );
+      const updated = await api.tasks.updateStatus(taskId, status);
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? updated : t))
+      );
 
-    const formattedStatus = status.replace('_', ' ').toUpperCase();
-    addToast('success', `Moved "${task.title}" to ${formattedStatus}`);
+      const formattedStatus = status.replace('_', ' ').toUpperCase();
+      addToast('success', `Moved "${task.title}" to ${formattedStatus}`);
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to move task.');
+    }
   };
 
   // Projects CRUD
-  const createProject = (name: string, description: string, color: string) => {
-    const newProj: Project = {
-      id: 'p_' + Date.now(),
-      name,
-      description,
-      color,
-      memberIds: users.map((u) => u.id), // Add all current seed users as members for convenient assignment
-      createdAt: new Date().toISOString()
-    };
-
-    setProjects((prev) => [...prev, newProj]);
-    addToast('success', `Project "${name}" created.`);
+  const createProject = async (name: string, description: string, color: string) => {
+    try {
+      const created = await api.projects.create(name, description, color);
+      setProjects((prev) => [created, ...prev]);
+      addToast('success', `Project "${name}" created.`);
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to create project.');
+    }
   };
 
-  const toggleStarProject = (projectId: string) => {
-    setStarredProjects((prev) => {
-      const isStarred = prev.includes(projectId);
-      if (isStarred) {
-        addToast('info', 'Project unstarred.');
-        return prev.filter((id) => id !== projectId);
-      } else {
-        addToast('success', 'Project added to starred favorites.');
-        return [...prev, projectId];
-      }
-    });
+  const toggleStarProject = async (projectId: string) => {
+    try {
+      const { starred } = await api.projects.toggleStar(projectId);
+      setStarredProjects((prev) => {
+        if (starred) {
+          addToast('success', 'Project added to starred favorites.');
+          return [...prev, projectId];
+        } else {
+          addToast('info', 'Project unstarred.');
+          return prev.filter((id) => id !== projectId);
+        }
+      });
+      setProjects((prev) =>
+        prev.map((p) => (p.id === projectId ? { ...p, starred } : p))
+      );
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to toggle project star.');
+    }
   };
 
   // Comments CRUD
-  const addComment = (taskId: string, body: string) => {
-    if (!currentUser) return;
+  const addComment = async (taskId: string, body: string) => {
     if (body.trim() === '') return;
 
-    const newComment: Comment = {
-      id: 'c_' + Date.now(),
-      taskId,
-      authorId: currentUser.id,
-      body,
-      createdAt: new Date().toISOString()
-    };
+    try {
+      const created = await api.comments.create(taskId, body);
+      setComments((prev) => [...prev, created]);
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId ? { ...t, commentCount: t.commentCount + 1 } : t
+        )
+      );
+      addToast('success', 'Comment posted.');
 
-    setComments((prev) => [...prev, newComment]);
-
-    // Recalculate comment count on task
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id === taskId) {
-          return {
-            ...t,
-            commentCount: t.commentCount + 1
-          };
-        }
-        return t;
-      })
-    );
-
-    addToast('success', 'Comment posted.');
-
-    // Notify other assignees/collaborators
-    const task = tasks.find((t) => t.id === taskId);
-    if (task && task.assigneeId && task.assigneeId !== currentUser.id) {
-      const newNotif: AppNotification = {
-        id: 'n_' + Date.now(),
-        title: 'New Comment',
-        description: `${currentUser.name} commented on "${task.title}": "${body.substring(0, 40)}${body.length > 40 ? '...' : ''}"`,
-        time: 'Just now',
-        read: false,
-        taskId: task.id,
-        projectId: task.projectId
-      };
-      setNotifications((prev) => [newNotif, ...prev]);
+      const fetchedNotifications = await api.notifications.list();
+      setNotifications(fetchedNotifications);
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to post comment.');
     }
   };
 
   // Notifications read status
-  const markNotificationsAsRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  const markNotificationsAsRead = async () => {
+    try {
+      await api.notifications.markAllRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to clear notifications.');
+    }
   };
 
   return (
@@ -475,6 +419,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isSidebarCollapsed,
         createProjectModalOpen,
         darkMode,
+        loading,
 
         login,
         toggleDarkMode,
@@ -504,7 +449,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markNotificationsAsRead,
         addToast,
         removeToast,
-        updateProfile
+        updateProfile,
       }}
     >
       {children}
