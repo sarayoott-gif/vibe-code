@@ -18,8 +18,22 @@ import { CreateEditTaskModal } from './components/CreateEditTaskModal';
 import { TaskDetailModal } from './components/TaskDetailModal';
 
 export default function App() {
-  const { currentUser, activeScreen } = useApp();
+  const { currentUser, activeScreen, loading } = useApp();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Render centered spinner screen while loading tokens and bootstrapping workspace data
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 transition-colors">
+        <div className="relative flex flex-col items-center">
+          <div className="w-12 h-12 border-4 border-brand-100 border-t-brand-600 rounded-full animate-spin dark:border-slate-800 dark:border-t-brand-400"></div>
+          <p className="mt-4 text-[10px] font-bold text-slate-400 dark:text-slate-500 animate-pulse tracking-widest uppercase font-display">
+            Initializing Workspace...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // If there is no authenticated user, render full screen auth view
   if (!currentUser) {
@@ -39,7 +53,7 @@ export default function App() {
         return <ProjectView />;
       case 'projects_index':
         return <ProjectsIndexView />;
-      case 'search_results':
+      case 'search':
         return <SearchResultsView />;
       case 'settings':
         return <SettingsView />;

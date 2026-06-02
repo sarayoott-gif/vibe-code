@@ -108,17 +108,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Load and refresh initial data
   const fetchInitialData = async () => {
     try {
-      const [fetchedUsers, fetchedProjects, fetchedTasks, fetchedComments, fetchedNotifications] = await Promise.all([
+      const [fetchedUsers, fetchedProjects, fetchedTasks, fetchedNotifications] = await Promise.all([
         api.users.list(),
         api.projects.list(),
         api.tasks.list(),
-        api.comments.listAll(),
         api.notifications.list()
       ]);
       setUsers(fetchedUsers);
       setProjects(fetchedProjects);
       setTasks(fetchedTasks);
-      setComments(fetchedComments);
       setNotifications(fetchedNotifications);
 
       const starredIds = fetchedProjects.filter(p => p.starred).map(p => p.id);
@@ -166,6 +164,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       document.documentElement.classList.remove('dark');
     }
   }, [darkMode]);
+
+  // Lazy-load comments when opening a task detail view
+  useEffect(() => {
+    if (viewingTaskId) {
+      const loadComments = async () => {
+        try {
+          const taskComments = await api.comments.list(viewingTaskId);
+          setComments((prev) => {
+            const withoutCurrent = prev.filter((c) => c.taskId !== viewingTaskId);
+            return [...withoutCurrent, ...taskComments];
+          });
+        } catch (err: any) {
+          console.error('Error loading task comments:', err);
+        }
+      };
+      loadComments();
+    }
+  }, [viewingTaskId]);
 
   const toggleDarkMode = () => {
     setDarkMode((prev) => !prev);
