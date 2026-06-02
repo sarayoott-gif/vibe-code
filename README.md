@@ -58,30 +58,41 @@ Aligning team efforts across project boards often gets messy and insecure:
 View your app in AI Studio: [https://ai.studio/apps/066946b6-4d11-43be-bae7-3aeed8bc68f5](https://ai.studio/apps/066946b6-4d11-43be-bae7-3aeed8bc68f5)
 
 ### Prerequisites
-*   Node.js (v18 or higher)
-*   npm or yarn
+*   Node.js (v18 or higher) and npm/yarn OR
+*   Docker and Docker Compose
 
-### 1. Install dependencies
+### Option A: Standard Local Setup
+
+#### 1. Install dependencies
 ```bash
 npm install
 ```
 
-### 2. Set up environment variables
+#### 2. Set up environment variables
 Create a `.env.local` file in the root directory (using `.env.example` as a guideline) and add your `GEMINI_API_KEY`:
 ```bash
 GEMINI_API_KEY="your-api-key-here"
 ```
 
-### 3. Initialize & Seed Database
+#### 3. Initialize & Seed Database
 ```bash
 npm run db:migrate   # Applies SQLite schema migrations
 npm run db:seed      # Seeds demo users, projects, tasks, and comments
 ```
 
-### 4. Run Locally
+#### 4. Run Locally
 ```bash
 npm run dev          # Starts Vite dev server (port 3000) and Express (port 3001)
 ```
+
+### Option B: Docker Container Setup
+If you prefer running in a containerized environment:
+```bash
+# Build and run the service
+docker-compose up -d --build
+```
+The application will automatically build in a production-ready environment, run database migrations, seed mock data, and expose the application at `http://localhost:3050`.
+
 
 ---
 
@@ -220,6 +231,14 @@ Test production assets compilation and packaging:
 ```bash
 npm run build        # Builds frontend client assets & bundles Express server
 ```
+
+### Docker Container Build & Run
+Test compiling the production environment into a Docker container locally:
+```bash
+docker-compose up -d --build
+```
+This multi-stage Docker build encapsulates compiling the client SPA using Vite, compiling the server bundle with esbuild, running database migrations, and seeding the SQLite database.
+
 
 ---
 *Document maintained by Antigravity AI assistant.*

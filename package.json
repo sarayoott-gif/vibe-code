@@ -8,7 +8,7 @@
     "dev:client": "vite --port=3000 --host=0.0.0.0",
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build && npm run build:server",
-    "build:server": "esbuild server/index.ts --bundle --platform=node --outfile=server.js --format=esm --external:@prisma/client",
+    "build:server": "esbuild server/index.ts --bundle --platform=node --outfile=server.js --format=esm --external:@prisma/client --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",

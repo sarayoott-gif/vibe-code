@@ -1,0 +1,13 @@
+services:
+  taskflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: taskflow-app
+    ports:
+      - "3050:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - JWT_SECRET=taskflow-dev-secret-change-in-production
+    restart: unless-stopped

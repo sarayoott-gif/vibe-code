@@ -80,6 +80,7 @@ erDiagram
 
 ## 🏃 Local Development Playbook
 
+### 💻 Standard Local Setup
 Follow these quick commands to spin up the local environment:
 
 ```bash
@@ -93,6 +94,16 @@ npm run db:seed      # Seeds demo users (u1-u5), projects (p1-p3), tasks, commen
 # 3. Launch Development Stack
 npm run dev          # Concurrently runs Client (port 3000) and Server (port 3001)
 ```
+
+### 🐳 Docker Container Deployment
+You can also run the entire application in a containerized production environment using Docker:
+
+```bash
+# Build and start the container in the background
+docker-compose up -d --build
+```
+This builds a multi-stage Docker image based on Node 22 Alpine, executes migrations & seeds mock data, and exposes the production application at `http://localhost:3050` (mapping to port 3001 internally).
+
 
 ---
 
